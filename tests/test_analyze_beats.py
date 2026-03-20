@@ -331,5 +331,78 @@ class TestAnalyzeBeats(unittest.TestCase):
         self.assertIsNotNone(result)
 
 
+    # ------------------------------------------------------------------
+    # source parameter — HPSS
+    # ------------------------------------------------------------------
+
+    def test_source_full_does_not_call_hpss(self):
+        mock_lib = _make_librosa_mock()
+        with patch("videoflow.audio._librosa", mock_lib), \
+             patch("videoflow.audio._np", __import__("numpy")), \
+             patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import analyze_beats
+            analyze_beats("track.mp3", source="full")
+        mock_lib.effects.hpss.assert_not_called()
+
+    def test_source_percussive_calls_hpss(self):
+        import numpy as np
+        mock_lib = _make_librosa_mock()
+        # hpss must return (harmonic, percussive) tuple of same shape as y
+        y_dummy = np.zeros(22050, dtype=np.float32)
+        mock_lib.effects.hpss.return_value = (y_dummy, y_dummy)
+        with patch("videoflow.audio._librosa", mock_lib), \
+             patch("videoflow.audio._np", np), \
+             patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import analyze_beats
+            analyze_beats("track.mp3", source="percussive")
+        mock_lib.effects.hpss.assert_called_once()
+
+    def test_source_percussive_passes_percussive_to_beat_track(self):
+        """beat_track must receive the percussive component, not the full mix."""
+        import numpy as np
+        mock_lib = _make_librosa_mock()
+        y_harmonic = np.ones(22050, dtype=np.float32)
+        y_percussive = np.zeros(22050, dtype=np.float32)
+        mock_lib.effects.hpss.return_value = (y_harmonic, y_percussive)
+        with patch("videoflow.audio._librosa", mock_lib), \
+             patch("videoflow.audio._np", np), \
+             patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import analyze_beats
+            analyze_beats("track.mp3", source="percussive")
+        _, call_kwargs = mock_lib.beat.beat_track.call_args
+        passed_y = call_kwargs.get("y", mock_lib.beat.beat_track.call_args[0][0]
+                                   if mock_lib.beat.beat_track.call_args[0] else None)
+        np.testing.assert_array_equal(passed_y, y_percussive)
+
+    def test_source_percussive_returns_valid_beat_map(self):
+        import numpy as np
+        mock_lib = _make_librosa_mock()
+        y_dummy = np.zeros(22050, dtype=np.float32)
+        mock_lib.effects.hpss.return_value = (y_dummy, y_dummy)
+        with patch("videoflow.audio._librosa", mock_lib), \
+             patch("videoflow.audio._np", np), \
+             patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import AudioBeatMap, analyze_beats
+            result = analyze_beats("track.mp3", source="percussive")
+        self.assertIsInstance(result, AudioBeatMap)
+        self.assertGreater(result.bpm, 0)
+
+    def test_source_invalid_raises_value_error(self):
+        with patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import analyze_beats
+            with self.assertRaises(ValueError) as ctx:
+                analyze_beats("track.mp3", source="drums")
+        self.assertIn("drums", str(ctx.exception))
+
+    def test_source_default_is_full(self):
+        mock_lib = _make_librosa_mock()
+        with patch("videoflow.audio._librosa", mock_lib), \
+             patch("videoflow.audio._np", __import__("numpy")), \
+             patch.object(Path, "exists", return_value=True):
+            from videoflow.audio import analyze_beats
+            analyze_beats("track.mp3")   # no source argument
+        mock_lib.effects.hpss.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

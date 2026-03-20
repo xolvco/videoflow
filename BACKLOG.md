@@ -227,6 +227,46 @@ Install: `pip install "videoflow[madmom]"` — separate optional dep group.
 
 ---
 
+### Demucs — full stem separation (vocals, drums, bass, other)
+
+[Demucs](https://github.com/facebookresearch/demucs) (Meta Research) separates audio into four clean stems: **drums**, **bass**, **vocals**, **other**. Open source, state of the art quality.
+
+**Use cases in videoflow:**
+
+1. **Drums-only beat tracking** — most accurate possible BPM/grid for complex music (jazz, live recordings, anything where HPSS is not clean enough):
+
+   ```python
+   beat_map = analyze_beats("track.mp3", source="drums")  # requires demucs
+   ```
+
+2. **Speech rhythm analysis** — isolate the vocal stem, detect speech onsets and emphasis patterns. Feeds the speech-editing feature: find where a speaker stresses words or pauses, use those as cut points:
+
+   ```python
+   speech_map = analyze_beats("interview.mp4", source="vocal")  # requires demucs
+   ```
+
+3. **Music-only export** — strip vocals from a track before attaching it to a canvas render. Useful when you want the instrumental bed without a lyric clash.
+
+**How to add it:** `source` parameter on `analyze_beats()` already exists.
+Add `"drums"` and `"vocal"` as valid values. Before analysis, run demucs to
+produce the stem, then pass the stem file to the existing librosa pipeline.
+Demucs writes stems to disk — keep them in a temp dir unless the caller asks
+to save them.
+
+```python
+beat_map = analyze_beats("track.mp3", source="drums")   # drums stem → librosa
+beat_map = analyze_beats("track.mp3", source="vocal")   # vocal stem → onset detection
+```
+
+**Install:** `pip install "videoflow[stems]"` — demucs as a separate optional dep group.
+GPU recommended (CUDA) for speed; CPU works but is slow on long files.
+
+**Why it's not V1:** HPSS (`source="percussive"`) covers 90% of the use case with zero
+extra deps. Demucs is worth adding once the core pipeline is in regular use and the
+drums/vocal distinction becomes a real need.
+
+---
+
 ### Real-ESRGAN integration
 
 Free AI upscaler. Frame extract → process → reassemble.

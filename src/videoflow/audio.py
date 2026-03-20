@@ -160,10 +160,14 @@ class AudioBeatMap:
         return min(candidates, key=lambda b: abs(b - ms))
 
 
+_SOURCES = ("full", "percussive")
+
+
 def analyze_beats(
     input: str | Path,
     *,
     sr: int = 22050,
+    source: str = "full",
 ) -> AudioBeatMap:
     """Analyse the beat structure of an audio or video file.
 
@@ -178,9 +182,22 @@ def analyze_beats(
     Install librosa with: ``pip install "videoflow[audio]"``
 
     Args:
-        input: Path to the audio or video file.
-        sr: Sample rate to use when loading (default 22050 Hz). Lower values
-            are faster; 22050 is librosa's standard for beat tracking.
+        input:  Path to the audio or video file.
+        sr:     Sample rate to use when loading (default 22050 Hz). Lower
+                values are faster; 22050 is librosa's standard for beat
+                tracking.
+        source: Which component of the audio to use for beat tracking.
+
+                ``"full"`` (default) — use the full mix as-is.
+
+                ``"percussive"`` — apply harmonic-percussive source
+                separation (HPSS) first and track beats on the percussive
+                component only.  Voice and melody are harmonic, so they are
+                effectively invisible to the beat tracker.  Use this when
+                the recording contains speech or prominent vocals over music
+                and you want beats to follow the drums rather than vocal
+                onsets.  Energy values also reflect percussive energy.
+                No extra dependencies — HPSS is built into librosa.
 
     Returns:
         :class:`AudioBeatMap` with bpm, beats, downbeats, phrases, energy,
@@ -188,8 +205,14 @@ def analyze_beats(
 
     Raises:
         FileNotFoundError: If the input file does not exist.
+        ValueError: If *source* is not a recognised value.
         BeatError: If librosa is not installed or analysis fails.
     """
+    if source not in _SOURCES:
+        raise ValueError(
+            f"source must be one of {list(_SOURCES)!r}, got {source!r}"
+        )
+
     input = Path(input)
     if not input.exists():
         raise FileNotFoundError(f"Input file not found: {input}")
@@ -202,7 +225,16 @@ def analyze_beats(
 
     try:
         y, sr_ = _librosa.load(str(input), sr=sr, mono=True)
-        tempo, beat_frames = _librosa.beat.beat_track(y=y, sr=sr_)
+        duration_ms = round(_librosa.get_duration(y=y, sr=sr_) * 1000)
+
+        # Select the signal used for beat tracking and energy.
+        # HPSS separates harmonic (voice, melody) from percussive (drums).
+        if source == "percussive":
+            _, y_track = _librosa.effects.hpss(y)
+        else:
+            y_track = y
+
+        tempo, beat_frames = _librosa.beat.beat_track(y=y_track, sr=sr_)
         beat_times = _librosa.frames_to_time(beat_frames, sr=sr_)
 
         bpm = float(_np.atleast_1d(tempo)[0])
@@ -218,17 +250,17 @@ def analyze_beats(
             end = beats_ms[min(i + 16, len(beats_ms) - 1)]
             phrases.append((start, end))
 
-        # Per-beat energy: RMS normalised to 0.0–1.0
-        rms = _librosa.feature.rms(y=y)[0]  # shape: (n_frames,)
+        # Per-beat energy: RMS of the tracked signal, normalised to 0.0–1.0.
+        # Using y_track keeps energy consistent with the beat source —
+        # percussive mode reports drum energy, not vocal energy.
+        rms = _librosa.feature.rms(y=y_track)[0]  # shape: (n_frames,)
         energy_raw = [
             float(rms[min(int(f), len(rms) - 1)]) for f in beat_frames
         ]
         max_e = max(energy_raw) if energy_raw else 1.0
         energy = [e / max_e if max_e > 0 else 0.0 for e in energy_raw]
 
-        duration_ms = round(_librosa.get_duration(y=y, sr=sr_) * 1000)
-
-    except BeatError:
+    except (BeatError, ValueError):
         raise
     except Exception as exc:
         raise BeatError(f"Beat analysis failed: {exc}") from exc

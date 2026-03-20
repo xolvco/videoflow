@@ -128,8 +128,11 @@ def cmd_analyze_beats(args: argparse.Namespace) -> int:
     from videoflow.audio import BeatError, analyze_beats
 
     try:
-        beat_map = analyze_beats(args.input)
+        beat_map = analyze_beats(args.input, source=args.source)
     except FileNotFoundError as exc:
+        _err(str(exc), args.human)
+        return 1
+    except ValueError as exc:
         _err(str(exc), args.human)
         return 1
     except BeatError as exc:
@@ -357,6 +360,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="FILE",
         help="Save beat map to a JSON file for reuse (e.g. track_beat.json).",
+    )
+    p_beats.add_argument(
+        "--source",
+        choices=["full", "percussive"],
+        default="full",
+        help=(
+            "full (default): use the full mix. "
+            "percussive: apply HPSS first — voice and melody are removed "
+            "before beat tracking, so beats follow the drums."
+        ),
     )
     p_beats.set_defaults(func=cmd_analyze_beats)
 
