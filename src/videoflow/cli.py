@@ -240,6 +240,7 @@ def cmd_concat(args: argparse.Namespace) -> int:
             reel = Reel.from_folder(
                 args.from_folder,
                 pattern=args.pattern,
+                sort=args.sort,
                 gap_ms=args.gap,
                 canvas_size=(w, h),
             )
@@ -415,6 +416,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--pattern",
         default="*.mp4",
         help="Glob pattern when using --from-folder (default '*.mp4').",
+    )
+    p_concat.add_argument(
+        "--sort",
+        choices=["name", "date"],
+        default="name",
+        help="Sort order for --from-folder: name (default, alphabetical) or date (modification time, oldest first).",
     )
     p_concat.add_argument(
         "--canvas",

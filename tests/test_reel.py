@@ -172,6 +172,36 @@ class TestFromFolder(unittest.TestCase):
             reel = Reel.from_folder(tmpdir, gap_ms=3000)
         self.assertEqual(reel.gap_ms, 3000)
 
+    def test_sort_name_is_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            (p / "c.mp4").write_text("fake")
+            (p / "a.mp4").write_text("fake")
+            (p / "b.mp4").write_text("fake")
+            reel = Reel.from_folder(tmpdir)
+        names = [Path(c.input).name for c in reel.clips]
+        self.assertEqual(names, ["a.mp4", "b.mp4", "c.mp4"])
+
+    def test_sort_date_orders_by_mtime(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            # Write files with deliberate mtime ordering: b before a before c
+            (p / "b.mp4").write_text("fake")
+            time.sleep(0.02)
+            (p / "a.mp4").write_text("fake")
+            time.sleep(0.02)
+            (p / "c.mp4").write_text("fake")
+            reel = Reel.from_folder(tmpdir, sort="date")
+        names = [Path(c.input).name for c in reel.clips]
+        self.assertEqual(names, ["b.mp4", "a.mp4", "c.mp4"])
+
+    def test_sort_invalid_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "a.mp4").write_text("fake")
+            with self.assertRaises(ValueError):
+                Reel.from_folder(tmpdir, sort="random")
+
 
 # ---------------------------------------------------------------------------
 # clip_duration_ms

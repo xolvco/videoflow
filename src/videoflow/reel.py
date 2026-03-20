@@ -90,27 +90,36 @@ class Reel:
         folder: str | Path,
         *,
         pattern: str = "*.mp4",
+        sort: str = "name",
         gap_ms: int = 2000,
         **kw,
     ) -> "Reel":
-        """Build a reel from all matching files in *folder*, sorted by name.
+        """Build a reel from all matching files in *folder*.
 
         Args:
             folder:  Directory to scan.
             pattern: Glob pattern (default ``"*.mp4"``).
+            sort:    ``"name"`` (default) — alphabetical by filename;
+                     ``"date"`` — by file modification time, oldest first.
             gap_ms:  Gap duration in milliseconds between clips.
             **kw:    Forwarded to :class:`Reel` (``canvas_size``, etc.).
 
         Raises:
             FileNotFoundError: If *folder* does not exist.
-            ValueError: If no files match *pattern*.
+            ValueError: If no files match *pattern* or *sort* is invalid.
         """
+        if sort not in ("name", "date"):
+            raise ValueError(f"sort must be 'name' or 'date', got {sort!r}")
         folder = Path(folder)
         if not folder.exists():
             raise FileNotFoundError(f"Folder not found: {folder}")
-        files = sorted(folder.glob(pattern))
+        files = list(folder.glob(pattern))
         if not files:
             raise ValueError(f"No files matching {pattern!r} in {folder}")
+        if sort == "date":
+            files.sort(key=lambda p: p.stat().st_mtime)
+        else:
+            files.sort()
         clips = [ReelClip(f, title=f.stem) for f in files]
         return cls(clips, gap_ms=gap_ms, **kw)
 

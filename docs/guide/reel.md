@@ -35,8 +35,8 @@ CLI equivalent:
 videoflow concat --from-folder videos/ --output output.mp4
 ```
 
-`from_folder` loads all `.mp4` files sorted by filename, sets each clip's chapter
-title to the filename stem, and inserts a 2-second black gap between every pair.
+`from_folder` loads all `.mp4` files sorted by filename (default), sets each clip's
+chapter title to the filename stem, and inserts a 2-second black gap between every pair.
 
 ---
 
@@ -120,7 +120,25 @@ pre-processing step.
 
 ---
 
-## Step 7 — Use a non-MP4 pattern
+## Step 7 — Sort order
+
+Default is alphabetical by filename. Switch to modification date (oldest first)
+when your filenames don't sort into the right playback order:
+
+```python
+reel = Reel.from_folder("videos/", sort="name")   # alphabetical (default)
+reel = Reel.from_folder("videos/", sort="date")   # oldest file first
+```
+
+CLI:
+
+```bash
+videoflow concat --from-folder videos/ --output reel.mp4 --sort date
+```
+
+---
+
+## Step 8 — Use a non-MP4 pattern
 
 ```python
 reel = Reel.from_folder("footage/", pattern="*.mov")
@@ -212,7 +230,7 @@ videoflow concat reel.json --output output.mp4 --crf 23 --preset medium
 Each clip becomes one chapter in the output. The chapter start and end times are
 calculated from clip duration + gap:
 
-```
+```text
 Clip 0: START=0        END=10000     title=Introduction
   gap: 2000ms
 Clip 1: START=12000    END=20000     title=The Metro
