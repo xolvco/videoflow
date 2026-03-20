@@ -1,0 +1,30 @@
+site_name: videoflow
+site_description: Composable video workflow pipeline
+repo_url: https://github.com/xolvco/videoflow
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: cyan
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - admonition
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Guides:
+      - Scene detection: guide/detect-scenes.md
+  - Reference:
+      - API: reference/api.md

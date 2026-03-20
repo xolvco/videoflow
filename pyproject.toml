@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "videoflow"
+version = "0.1.0"
+description = "Composable video workflow pipeline — scene detection, smart clips, GPU upscaling, job monitoring"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+scenes = ["scenedetect[opencv]>=0.6"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.4"]
+
+[project.scripts]
+videoflow = "videoflow.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/videoflow"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
