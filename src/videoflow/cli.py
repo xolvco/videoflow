@@ -181,6 +181,69 @@ def cmd_analyze_beats(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# generate-funscript — audio/beat-map → .funscript
+# ---------------------------------------------------------------------------
+
+def cmd_generate_funscript(args: argparse.Namespace) -> int:
+    from videoflow.generate import GenerateError, generate_from_beats
+
+    input_path = Path(args.input)
+
+    # Accept either a saved beat-map JSON or an audio/video file
+    if input_path.suffix.lower() == ".json":
+        from videoflow.audio import AudioBeatMap
+        try:
+            beat_map = AudioBeatMap.load(input_path)
+        except FileNotFoundError as exc:
+            _err(str(exc), args.human)
+            return 1
+        except (KeyError, ValueError) as exc:
+            _err(f"invalid beat map JSON: {exc}", args.human)
+            return 1
+    else:
+        from videoflow.audio import BeatError, analyze_beats
+        try:
+            beat_map = analyze_beats(input_path, source=args.source)
+        except FileNotFoundError as exc:
+            _err(str(exc), args.human)
+            return 1
+        except (BeatError, ValueError) as exc:
+            _err(str(exc), args.human)
+            return 1
+
+    try:
+        output = generate_from_beats(
+            beat_map,
+            args.output,
+            low=args.low,
+            high=args.high,
+            title=args.title or "",
+        )
+    except GenerateError as exc:
+        _err(str(exc), args.human)
+        return 1
+
+    data = {
+        "output": str(output),
+        "bpm": round(beat_map.bpm, 2),
+        "beats": len(beat_map.beats),
+        "phrases": len(beat_map.phrases),
+        "duration_ms": beat_map.duration_ms,
+    }
+
+    if args.human:
+        print(f"output:   {output}")
+        print(f"bpm:      {beat_map.bpm:.1f}")
+        print(f"beats:    {len(beat_map.beats)}")
+        print(f"phrases:  {len(beat_map.phrases)}")
+        print(f"duration: {beat_map.duration_ms / 1000:.1f}s")
+    else:
+        print(json.dumps(data, indent=2))
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # render — execute a canvas.json edit file
 # ---------------------------------------------------------------------------
 
@@ -372,6 +435,43 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_beats.set_defaults(func=cmd_analyze_beats)
+
+    # generate-funscript
+    p_gen = sub.add_parser(
+        "generate-funscript",
+        help="Generate a .funscript from an audio/video file or saved beat map.",
+    )
+    p_gen.add_argument(
+        "input", type=Path,
+        help="Audio/video file (MP3, WAV, MP4…) or a saved beat map .json.",
+    )
+    p_gen.add_argument(
+        "output", type=Path,
+        help="Output .funscript file path.",
+    )
+    p_gen.add_argument(
+        "--source",
+        choices=["full", "percussive"],
+        default="percussive",
+        help=(
+            "percussive (default): strip voice/melody before beat tracking — "
+            "best for music with vocals. "
+            "full: use the raw mix."
+        ),
+    )
+    p_gen.add_argument(
+        "--low", type=int, default=10, metavar="POS",
+        help="Trough position 0–100 (default 10).",
+    )
+    p_gen.add_argument(
+        "--high", type=int, default=90, metavar="POS",
+        help="Maximum peak position 0–100 (default 90).",
+    )
+    p_gen.add_argument(
+        "--title", default="", metavar="TEXT",
+        help="Optional title stored in funscript metadata.",
+    )
+    p_gen.set_defaults(func=cmd_generate_funscript)
 
     # render — execute a canvas.json edit file
     p_render = sub.add_parser(
