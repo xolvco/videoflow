@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from videoflow.audio import AudioBeatMap, BeatError
+from videoflow.mix import AudioMix, MixError
 
 
 class LayoutError(RuntimeError):
@@ -99,12 +100,14 @@ class MultiPanelCanvas:
         *,
         canvas_size: tuple[int, int] = (4860, 2160),
         beat_map: AudioBeatMap | None = None,
+        audio_mix: AudioMix | None = None,
     ) -> None:
         if not panels:
             raise ValueError("panels must not be empty")
         self.panels = panels
         self.canvas_size = canvas_size
         self.beat_map = beat_map  # reserved — used in V2 for beat-sync transitions
+        self.audio_mix = audio_mix
         self._finale: FinaleClip | None = None
 
     def set_finale(
@@ -224,6 +227,8 @@ class MultiPanelCanvas:
                 for p in self.panels
             ],
         }
+        if self.audio_mix is not None:
+            d["audio"] = self.audio_mix.to_dict()
         if self._finale is not None:
             d["finale"] = {
                 "input": str(self._finale.input),
@@ -272,6 +277,11 @@ class MultiPanelCanvas:
             canvas_size = tuple(data.get("canvas_size", [4860, 2160]))
             canvas = cls(panels, canvas_size=canvas_size)  # type: ignore[arg-type]
 
+            if "audio" in data:
+                try:
+                    canvas.audio_mix = AudioMix.from_dict(data["audio"])
+                except MixError as exc:
+                    raise LayoutError(str(exc)) from exc
             if "finale" in data:
                 f = data["finale"]
                 canvas.set_finale(
@@ -343,23 +353,32 @@ class MultiPanelCanvas:
         n = len(self.panels)
         hstack_inputs = "".join(panel_labels)
 
-        if self._finale is not None:
-            # hstack panels → [panels]; scale finale → [fin]; concat both
-            finale_idx = n
-            w, h = self.canvas_size
-            parts.append(
-                f"{hstack_inputs}hstack=inputs={n}[panels]"
-            )
-            parts.append(
-                f"[{finale_idx}:v]scale={w}:{h}[fin]"
-            )
-            parts.append(
-                "[panels][fin]concat=n=2:v=1:a=0[out]"
-            )
-        else:
-            parts.append(f"{hstack_inputs}hstack=inputs={n}[out]")
+        # Finale input index (after panel inputs)
+        finale_idx = n
+        # Audio inputs start after panel inputs (and after finale if present)
+        audio_start_idx = n + (1 if self._finale is not None else 0)
 
-        return ";".join(parts)
+        if self._finale is not None:
+            w, h = self.canvas_size
+            parts.append(f"{hstack_inputs}hstack=inputs={n}[panels]")
+            parts.append(f"[{finale_idx}:v]scale={w}:{h}[fin]")
+            concat_av = "1:a=1" if self.audio_mix else "1:a=0"
+            parts.append(f"[panels][fin]concat=n=2:v={concat_av}[vout]")
+            video_out = "[vout]"
+        else:
+            parts.append(f"{hstack_inputs}hstack=inputs={n}[vout]")
+            video_out = "[vout]"
+
+        # Audio mix
+        if self.audio_mix is not None:
+            audio_parts, audio_out = self.audio_mix.build_filter_chains(
+                audio_start_idx
+            )
+            parts.extend(audio_parts)
+        else:
+            audio_out = None
+
+        return ";".join(parts), video_out, audio_out
 
     def _build_command(
         self, output: Path, *, crf: int, preset: str
@@ -375,13 +394,24 @@ class MultiPanelCanvas:
         if self._finale is not None:
             cmd += ["-i", str(Path(self._finale.input))]
 
+        # Audio track inputs (if mix is set)
+        if self.audio_mix is not None:
+            for track in self.audio_mix.tracks:
+                cmd += ["-i", str(Path(track.input))]
+
+        fc, video_out, audio_out = self._build_filter_complex()
+
+        cmd += ["-filter_complex", fc, "-map", video_out]
+
+        if audio_out:
+            cmd += ["-map", audio_out, "-c:a", "aac", "-b:a", "192k"]
+        else:
+            cmd += ["-an"]
+
         cmd += [
-            "-filter_complex", self._build_filter_complex(),
-            "-map", "[out]",
             "-c:v", "libx264",
             "-crf", str(crf),
             "-preset", preset,
-            "-an",          # panels are silent by default — add audio mix in V2
             str(output),
         ]
 

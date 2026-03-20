@@ -218,6 +218,75 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# concat — assemble clips with gaps and chapter markers
+# ---------------------------------------------------------------------------
+
+def cmd_concat(args: argparse.Namespace) -> int:
+    from videoflow.reel import Reel, ReelError
+
+    try:
+        if args.from_folder is not None:
+            if not args.output:
+                _err(
+                    "--output is required when using --from-folder",
+                    args.human,
+                )
+                return 1
+            try:
+                w, h = (int(x) for x in args.canvas.split("x"))
+            except ValueError:
+                _err(f"invalid --canvas value {args.canvas!r}, use WxH (e.g. 1920x1080)", args.human)
+                return 1
+            reel = Reel.from_folder(
+                args.from_folder,
+                pattern=args.pattern,
+                gap_ms=args.gap,
+                canvas_size=(w, h),
+            )
+            output = args.output
+        else:
+            try:
+                reel = Reel.load(args.reel)
+            except FileNotFoundError as exc:
+                _err(str(exc), args.human)
+                return 1
+            except ReelError as exc:
+                _err(str(exc), args.human)
+                return 1
+            output = args.output or reel.to_dict().get("output")
+            if not output:
+                _err(
+                    "output path required — set 'output' in reel.json or pass --output",
+                    args.human,
+                )
+                return 1
+
+        result = reel.render(output, crf=args.crf, preset=args.preset)
+
+    except FileNotFoundError as exc:
+        _err(str(exc), args.human)
+        return 1
+    except ReelError as exc:
+        _err(str(exc), args.human)
+        return 1
+    except ValueError as exc:
+        _err(str(exc), args.human)
+        return 1
+
+    data = {
+        "output": str(result),
+        "clips": len(reel.clips),
+        "gap_ms": reel.gap_ms,
+    }
+    if args.human:
+        print(f"rendered: {result}  ({len(reel.clips)} clips, {reel.gap_ms}ms gaps)")
+    else:
+        print(json.dumps(data, indent=2))
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 
@@ -309,6 +378,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="ffmpeg encoding preset (default: fast).",
     )
     p_render.set_defaults(func=cmd_render)
+
+    # concat — assemble clips from a folder or JSON reel file
+    p_concat = sub.add_parser(
+        "concat",
+        help="Concat video clips with gaps and chapter markers.",
+    )
+    p_concat_src = p_concat.add_mutually_exclusive_group(required=True)
+    p_concat_src.add_argument(
+        "--from-folder",
+        type=Path,
+        metavar="DIR",
+        dest="from_folder",
+        help="Scan a folder for .mp4 files (sorted by name).",
+    )
+    p_concat_src.add_argument(
+        "reel",
+        type=Path,
+        nargs="?",
+        help="Path to a reel.json file.",
+    )
+    p_concat.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        help="Output video file (required when using --from-folder).",
+    )
+    p_concat.add_argument(
+        "--gap",
+        type=int,
+        default=2000,
+        metavar="MS",
+        help="Gap duration in milliseconds between clips (default 2000).",
+    )
+    p_concat.add_argument(
+        "--pattern",
+        default="*.mp4",
+        help="Glob pattern when using --from-folder (default '*.mp4').",
+    )
+    p_concat.add_argument(
+        "--canvas",
+        default="1920x1080",
+        metavar="WxH",
+        help="Canvas size for scaling (default '1920x1080').",
+    )
+    p_concat.add_argument(
+        "--crf", type=int, default=18,
+        help="H.264 quality factor (lower = better, default 18).",
+    )
+    p_concat.add_argument(
+        "--preset", default="fast",
+        help="ffmpeg encoding preset (default: fast).",
+    )
+    p_concat.set_defaults(func=cmd_concat)
 
     return parser
 

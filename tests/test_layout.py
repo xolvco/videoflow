@@ -115,7 +115,7 @@ class TestFilterComplex(unittest.TestCase):
 
     def test_contains_setpts_for_each_panel(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         # panel 0 and 1: speed=2.0 → setpts=0.5
         self.assertIn("setpts=0.500000*PTS", fc)
         # panel 2 and 3: speed=0.5 → setpts=2.0
@@ -123,7 +123,7 @@ class TestFilterComplex(unittest.TestCase):
 
     def test_smart_crop_applied_to_inner_panels(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         # panels 1 and 2 are smart-crop
         self.assertIn("crop=iw*6/10:ih*6/10", fc)
 
@@ -135,41 +135,42 @@ class TestFilterComplex(unittest.TestCase):
 
     def test_scale_uses_panel_width_and_canvas_height(self):
         canvas = _canvas(canvas_size=(4860, 2160))  # panel_w=1215
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         self.assertIn("scale=1215:2160", fc)
 
     def test_hstack_inputs_count(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         self.assertIn("hstack=inputs=4", fc)
 
     def test_output_label_present(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
-        self.assertIn("[out]", fc)
+        fc, video_out, _ = canvas._build_filter_complex()
+        self.assertIn("[vout]", fc)
+        self.assertEqual(video_out, "[vout]")
 
     def test_finale_adds_concat(self):
         canvas = _canvas()
         canvas.set_finale("capitol.mp4")
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         self.assertIn("concat=n=2", fc)
         self.assertIn("[panels]", fc)
         self.assertIn("[fin]", fc)
 
     def test_no_finale_no_concat(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         self.assertNotIn("concat", fc)
 
     def test_finale_scales_to_full_canvas(self):
         canvas = _canvas(canvas_size=(4860, 2160))
         canvas.set_finale("capitol.mp4")
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         self.assertIn("scale=4860:2160", fc)
 
     def test_panels_have_sequential_stream_indices(self):
         canvas = _canvas()
-        fc = canvas._build_filter_complex()
+        fc, _, _ = canvas._build_filter_complex()
         for i in range(4):
             self.assertIn(f"[{i}:v]", fc)
 
@@ -201,7 +202,7 @@ class TestBuildCommand(unittest.TestCase):
         canvas = _canvas()
         cmd = canvas._build_command(Path("out.mp4"), crf=18, preset="fast")
         map_idx = cmd.index("-map") + 1
-        self.assertEqual(cmd[map_idx], "[out]")
+        self.assertEqual(cmd[map_idx], "[vout]")
 
     def test_crf_in_command(self):
         canvas = _canvas()
