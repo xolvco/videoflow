@@ -251,5 +251,51 @@ Requires Resolve to be running — investigate headless options.
 
 ### 3D rendering integration
 
-Script generation for Blender, Cinema 4D, Unreal Engine headless rendering.
-GPU-aware: device selection, progress reporting, job manifest integration.
+Headless render script generation for Blender, Cinema 4D, and Unreal Engine.
+The rendered frames or video clips feed directly into the videoflow pipeline —
+3D output is just another clip source for `Reel`, `MultiPanelCanvas`, or beat-grid assembly.
+
+**Target renderers (V1 priority order):**
+
+1. **Blender** — open source, scriptable via `blender --background --python render.py`.
+   Cycles + EEVEE. GPU selection via `bpy.context.preferences.addons['cycles'].preferences`.
+   Output: image sequence → `concat_videos()` reassembles to mp4.
+
+2. **Unreal Engine (Movie Render Queue)** — command-line render via
+   `UnrealEditor-Cmd.exe project.uproject -MoviePipelineLocalExecutorClass=...`.
+   More complex; useful for real-time-quality cinematic output.
+
+3. **Cinema 4D** — `c4dpy` scripting or command-line token-based rendering.
+   Lower priority; less common in indie video production.
+
+**API concept:**
+
+```python
+from videoflow.render3d import BlenderRenderJob
+
+job = BlenderRenderJob(
+    blend_file="scene.blend",
+    output_dir="frames/",
+    frame_range=(1, 240),  # 10s at 24fps
+    device="GPU",          # "GPU" or "CPU"
+    engine="CYCLES",       # "CYCLES" or "EEVEE"
+    samples=128,
+)
+job.run()  # blocks; streams progress
+
+# Then feed into pipeline
+reel = Reel([ReelClip("frames/output.mp4"), ReelClip("live_footage.mp4")])
+reel.render("final.mp4")
+```
+
+**Integration with production board:**
+The `render3d` stage sits between `topaz` and `edit` in the pipeline.
+`project.json` tracks which machine is running the Blender job, progress %, and output path.
+GPU-aware: pick the machine with the fastest card (RTX 4070 for most jobs).
+Progress: parse Blender's stdout (`Fra:240 Mem:...`) for `%` updates in the production board.
+
+**Why it's deep in the backlog:**
+Blender rendering is a standalone step — you set it up, it runs overnight.
+The real value is (a) integrating its output seamlessly into the pipeline and
+(b) tracking it in the production board alongside other stages.
+Neither is urgent until the rest of the pipeline is running smoothly.
