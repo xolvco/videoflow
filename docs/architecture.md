@@ -79,3 +79,9 @@ The monitor reads the folder and shows a live table.
 Primary machines have NVIDIA RTX 4070 GPUs. Default encoder for scripts is
 `hevc_nvenc`. Multiple machines run jobs simultaneously; `device=0`, `device=1`, etc.
 select which GPU to use on multi-GPU machines. CPU fallback is always `libx265`.
+
+**Development machine:** The current dev machine does not have a GPU. GPU-dependent
+features (Demucs stem separation, Topaz script generation, Real-ESRGAN) are developed
+and tested on CPU on the dev machine and run on GPU machines in production. Any
+feature that wraps a GPU tool must work correctly on CPU — just slower — so it can
+be iterated on locally before dispatching to a render machine.
