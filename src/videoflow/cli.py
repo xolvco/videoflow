@@ -149,6 +149,11 @@ def cmd_analyze_beats(args: argparse.Namespace) -> int:
         "energy": [round(e, 4) for e in beat_map.energy],
     }
 
+    if args.save:
+        save_path = beat_map.save(args.save)
+        if args.human:
+            print(f"saved:        {save_path}")
+
     if args.human:
         print(f"input:        {args.input}")
         print(f"bpm:          {beat_map.bpm:.1f}")
@@ -167,6 +172,46 @@ def cmd_analyze_beats(args: argparse.Namespace) -> int:
         if not args.beats:
             data.pop("beats")
             data.pop("energy")
+        print(json.dumps(data, indent=2))
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# render — execute a canvas.json edit file
+# ---------------------------------------------------------------------------
+
+def cmd_render(args: argparse.Namespace) -> int:
+    from videoflow.layout import LayoutError, MultiPanelCanvas
+
+    try:
+        canvas = MultiPanelCanvas.load(args.edit)
+    except FileNotFoundError as exc:
+        _err(str(exc), args.human)
+        return 1
+    except LayoutError as exc:
+        _err(str(exc), args.human)
+        return 1
+
+    output = args.output or canvas.to_dict().get("output")
+    if not output:
+        _err("output path required — set 'output' in the JSON or pass --output", args.human)
+        return 1
+
+    try:
+        result = canvas.render(
+            output,
+            crf=args.crf,
+            preset=args.preset,
+        )
+    except (FileNotFoundError, LayoutError) as exc:
+        _err(str(exc), args.human)
+        return 1
+
+    data = {"output": str(result), "edit": str(args.edit)}
+    if args.human:
+        print(f"rendered: {result}")
+    else:
         print(json.dumps(data, indent=2))
 
     return 0
@@ -236,7 +281,34 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include full beat timestamp list in output.",
     )
+    p_beats.add_argument(
+        "--save",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Save beat map to a JSON file for reuse (e.g. track_beat.json).",
+    )
     p_beats.set_defaults(func=cmd_analyze_beats)
+
+    # render — execute a canvas.json edit file
+    p_render = sub.add_parser(
+        "render",
+        help="Render a canvas edit JSON file to video.",
+    )
+    p_render.add_argument("edit", type=Path, help="Path to canvas.json edit file.")
+    p_render.add_argument(
+        "--output", type=Path, default=None,
+        help="Output video path (overrides 'output' field in JSON).",
+    )
+    p_render.add_argument(
+        "--crf", type=int, default=18,
+        help="H.264 quality factor (lower = better, default 18).",
+    )
+    p_render.add_argument(
+        "--preset", default="fast",
+        help="ffmpeg encoding preset (default: fast).",
+    )
+    p_render.set_defaults(func=cmd_render)
 
     return parser
 

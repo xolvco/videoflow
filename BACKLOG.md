@@ -71,10 +71,73 @@ as a product; videoflow makes it a composable pipeline step.
 
 ---
 
-### Topaz Video AI script generator
+### Production board — pipeline stage tracker
 
-Generate ffmpeg commands from human-friendly inputs (model, target res, GPU device).
-Writes .ps1 + .sh scripts with progress reporting. RTX 4070 / `hevc_nvenc` primary.
+At 2+ videos/week across multiple machines, you need to see where every project
+is in the pipeline at a glance. Not just job progress — stage status per project.
+
+```text
+PROJECT              RAW    TOPAZ   EDIT   RENDER  DELIVER
+─────────────────────────────────────────────────────────
+dc_metro             ✓      ✓       ►      ·       ·
+customer_acme        ✓      ►       ·      ·       ·        71%
+music_video_01       ✓      ✓       ✓      ✓       ✓
+music_video_02       ►      ·       ·      ·       ·
+```
+
+Each project is a folder containing a `project.json` tracking stage status
+**and file locations**. Knowing the stage isn't enough — you need to know
+where the actual files are across machines and drives.
+
+```json
+{
+  "project": "dc_metro",
+  "stages": {
+    "raw":    {"status": "done", "machine": "nas",      "path": "//NAS/raw/dc_metro/"},
+    "topaz":  {"status": "done", "machine": "machine2", "path": "D:/topaz/dc_metro/"},
+    "edit":   {"status": "in_progress", "machine": "machine1", "path": "C:/edit/dc_metro/"},
+    "render": {"status": "pending"},
+    "deliver":{"status": "pending"}
+  }
+}
+```
+
+Any machine can update it. No server — coordination via shared folder
+(NAS, Dropbox, OneDrive). Terminal table refreshes every 30s.
+
+Stages: `raw` → `topaz` → `edit` → `render` → `deliver`.
+Each stage: `·` (pending) / `►` (in progress, with %) / `✓` (done, with path) / `✗` (failed).
+
+The board shows status AND location — no hunting across drives:
+
+```text
+PROJECT     RAW        TOPAZ           EDIT        RENDER  DELIVER
+──────────────────────────────────────────────────────────────────
+dc_metro    NAS ✓      machine2/D: ✓   machine1 ►  ·       ·
+acme_video  NAS ✓      machine3/D: ►   ·           ·       ·   62%
+```
+
+Stage transitions are tracked — the "did I already copy this to the edit machine?"
+question is answered by the project.json, not by memory.
+
+```python
+from videoflow.monitor import ProductionBoard
+
+board = ProductionBoard(projects_dir="~/Videos/projects/")
+board.watch()   # live terminal table, Ctrl+C to exit
+```
+
+CLI:
+
+```bash
+videoflow board                    # live table
+videoflow board --once             # print once and exit
+videoflow board --project dc_metro # single project status
+```
+
+**Why this matters at scale:** Two videos a week means 8–10 projects in flight
+at any time across 4 machines. Without the board you're SSHing into machines
+or opening folders manually 3–4× a day. The board makes it a 2-second glance.
 
 ---
 
@@ -82,6 +145,16 @@ Writes .ps1 + .sh scripts with progress reporting. RTX 4070 / `hevc_nvenc` prima
 
 Live terminal table of all jobs/ folder entries. Refreshes every 30s.
 No server — coordination via shared folder (NAS, Dropbox, OneDrive).
+Granular job-level progress within a pipeline stage (e.g. Topaz % per file).
+
+---
+
+### Topaz Video AI script generator
+
+Generate batch scripts for Topaz Video AI from human-friendly inputs
+(model, target resolution, GPU device index).
+Nice-to-have for power users running 4+ machines; manual Topaz is fine for V1.
+RTX 4070 / `hevc_nvenc` primary target.
 
 ---
 

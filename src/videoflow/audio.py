@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 
 # Optional dependency — imported at module level so tests can patch it.
@@ -61,6 +62,68 @@ class AudioBeatMap:
     def beats_in_range(self, start_ms: int, end_ms: int) -> list[int]:
         """Return beat timestamps that fall within [start_ms, end_ms)."""
         return [b for b in self.beats if start_ms <= b < end_ms]
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """Return a JSON-serialisable dict representation."""
+        return {
+            "bpm": self.bpm,
+            "duration_ms": self.duration_ms,
+            "beats": self.beats,
+            "downbeats": self.downbeats,
+            "phrases": [{"start_ms": s, "end_ms": e} for s, e in self.phrases],
+            "energy": [round(e, 6) for e in self.energy],
+        }
+
+    def save(self, path: str | Path) -> Path:
+        """Save the beat map to a JSON file.
+
+        The saved file can be reloaded with :meth:`load` — no need to
+        re-run librosa on subsequent renders.
+
+        Args:
+            path: Destination ``.json`` file path.
+
+        Returns:
+            Path to the written file.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2))
+        return path
+
+    @classmethod
+    def load(cls, path: str | Path) -> "AudioBeatMap":
+        """Load a beat map previously saved with :meth:`save`.
+
+        Args:
+            path: Path to the ``.json`` file.
+
+        Returns:
+            Reconstructed :class:`AudioBeatMap`.
+
+        Raises:
+            FileNotFoundError: If *path* does not exist.
+            BeatError: If the file is missing required fields.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Beat map file not found: {path}")
+        try:
+            data = json.loads(path.read_text())
+            return cls(
+                bpm=float(data["bpm"]),
+                duration_ms=int(data["duration_ms"]),
+                beats=[int(b) for b in data["beats"]],
+                downbeats=[int(b) for b in data["downbeats"]],
+                phrases=[(int(p["start_ms"]), int(p["end_ms"])) for p in data["phrases"]],
+                energy=[float(e) for e in data["energy"]],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BeatError(f"Invalid beat map file {path}: {exc}") from exc
 
     def nearest_beat(self, ms: int, *, direction: str = "nearest") -> int:
         """Return the beat timestamp closest to *ms*.

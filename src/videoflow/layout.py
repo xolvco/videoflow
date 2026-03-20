@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import subprocess
-import tempfile
 from pathlib import Path
 
-from videoflow.audio import AudioBeatMap
+from videoflow.audio import AudioBeatMap, BeatError
 
 
 class LayoutError(RuntimeError):
@@ -197,6 +197,111 @@ class MultiPanelCanvas:
     # ------------------------------------------------------------------
     # Internal — command and filter_complex construction
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Serialisation — JSON is the edit description
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """Return a JSON-serialisable dict describing this canvas edit.
+
+        The returned dict can be saved to ``canvas.json`` and later
+        restored with :meth:`from_dict`.  The UI fills this structure;
+        the renderer reads it.  Humans can inspect and edit it directly.
+        """
+        d: dict = {
+            "type": "canvas_edit",
+            "version": "1.0",
+            "canvas_size": list(self.canvas_size),
+            "output": "",
+            "panels": [
+                {
+                    "input": str(p.input),
+                    "speed": p.speed,
+                    "position": p.position,
+                    "crop": p.crop,
+                }
+                for p in self.panels
+            ],
+        }
+        if self._finale is not None:
+            d["finale"] = {
+                "input": str(self._finale.input),
+                "beats": self._finale.beats,
+                "mode": self._finale.mode,
+            }
+        return d
+
+    def save(self, path: str | Path) -> Path:
+        """Save the canvas edit description to a JSON file.
+
+        Args:
+            path: Destination ``.json`` file (e.g. ``dc_metro_canvas.json``).
+
+        Returns:
+            Path to the written file.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2))
+        return path
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MultiPanelCanvas":
+        """Reconstruct a :class:`MultiPanelCanvas` from a plain dict.
+
+        Args:
+            data: Dict as produced by :meth:`to_dict`.
+
+        Returns:
+            Reconstructed :class:`MultiPanelCanvas`.
+
+        Raises:
+            LayoutError: If required fields are missing or invalid.
+        """
+        try:
+            panels = [
+                Panel(
+                    input=p["input"],
+                    speed=float(p.get("speed", 1.0)),
+                    position=p.get("position", "outer_left"),
+                    crop=p.get("crop", "full"),
+                )
+                for p in data["panels"]
+            ]
+            canvas_size = tuple(data.get("canvas_size", [4860, 2160]))
+            canvas = cls(panels, canvas_size=canvas_size)  # type: ignore[arg-type]
+
+            if "finale" in data:
+                f = data["finale"]
+                canvas.set_finale(
+                    f["input"],
+                    beats=int(f.get("beats", 8)),
+                    mode=f.get("mode", "full_width"),
+                )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LayoutError(f"Invalid canvas edit data: {exc}") from exc
+        return canvas
+
+    @classmethod
+    def load(cls, path: str | Path) -> "MultiPanelCanvas":
+        """Load a canvas edit from a JSON file saved with :meth:`save`.
+
+        Args:
+            path: Path to the ``.json`` file.
+
+        Returns:
+            Reconstructed :class:`MultiPanelCanvas`.
+
+        Raises:
+            FileNotFoundError: If *path* does not exist.
+            LayoutError: If the file is missing required fields.
+        """
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(f"Canvas edit file not found: {path}")
+        data = json.loads(path.read_text())
+        return cls.from_dict(data)
 
     def _panel_width(self) -> int:
         """Width of each panel column in pixels."""
