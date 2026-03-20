@@ -111,6 +111,50 @@ t = beat_map.nearest_beat(3_500, direction="after")
 beats_in_intro = beat_map.beats_in_range(0, 10_000)
 ```
 
+### Step 6 — Filter out voice before tracking beats
+
+By default `analyze_beats` works on the full audio mix. If your recording has
+a voice, presenter, or prominent vocals over music, vocal onsets can look like
+beats to the tracker — especially in the lower registers — and pull the grid
+off-time.
+
+Use `source="percussive"` to separate the audio into harmonic (voice, melody,
+chords) and percussive (drums, transients) components first, then track beats
+on the percussive component only. Voice becomes invisible to the tracker.
+
+```python
+# Full mix (default) — voice can interfere with beat tracking
+beat_map = analyze_beats("video_with_presenter.mp4")
+
+# Percussive only — voice and melody stripped before tracking
+beat_map = analyze_beats("video_with_presenter.mp4", source="percussive")
+```
+
+CLI:
+
+```bash
+videoflow analyze-beats video_with_presenter.mp4 --source percussive --human
+```
+
+**How it works:** `source="percussive"` calls `librosa.effects.hpss()` —
+Harmonic-Percussive Source Separation. HPSS uses the fact that harmonic sounds
+(voice, piano, guitar) produce horizontal streaks in a spectrogram, while
+percussive sounds (drums, claps, transients) produce vertical streaks. It
+separates them mathematically and discards the harmonic half before the beat
+tracker runs. No extra dependencies — HPSS is built into librosa.
+
+**Energy values follow the source.** In `source="percussive"` mode the `energy`
+field on the returned beat map reflects *percussive* energy at each beat — kick
+drum and snare hits score high, vocal phrases score low. This makes energy a
+reliable indicator of drum intensity rather than overall loudness.
+
+**When to use each mode:**
+
+| Source | Use when |
+| --- | --- |
+| `"full"` (default) | Pure music, no voice, or you want the track to drive timing |
+| `"percussive"` | Voice-over music, presenter video, talking-head footage with a music bed |
+
 ---
 
 ### What `analyze_beats` returns
@@ -121,8 +165,8 @@ beats_in_intro = beat_map.beats_in_range(0, 10_000)
 | `beats` | `list[int]` | Timestamp (ms) of every beat |
 | `downbeats` | `list[int]` | Every 4th beat (V1: 4/4 assumed) |
 | `phrases` | `list[tuple[int,int]]` | Groups of 16 beats (4 bars) |
-| `energy` | `list[float]` | Normalised RMS at each beat (0.0–1.0) |
-| `duration_ms` | `int` | Total audio duration |
+| `energy` | `list[float]` | Normalised RMS at each beat (0.0–1.0) — from the `source` component |
+| `duration_ms` | `int` | Total audio duration (always from the full signal) |
 
 ---
 
