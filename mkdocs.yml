@@ -20,11 +20,15 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight
   - admonition
+  - tables
 
 nav:
   - Home: index.md
   - Architecture: architecture.md
   - Guides:
+      - Concat clips (Reel): guide/reel.md
+      - Multi-panel canvas: guide/canvas.md
+      - Audio — beats and mixing: guide/audio.md
       - Scene detection: guide/detect-scenes.md
   - Reference:
       - API: reference/api.md
