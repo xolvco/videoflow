@@ -1,0 +1,180 @@
+"""Audio beat analysis — librosa wrapper returning a rich AudioBeatMap."""
+
+from __future__ import annotations
+
+import dataclasses
+from pathlib import Path
+
+# Optional dependency — imported at module level so tests can patch it.
+try:
+    import librosa as _librosa  # type: ignore[import]
+    import numpy as _np  # type: ignore[import]
+except ImportError:
+    _librosa = None  # type: ignore[assignment]
+    _np = None  # type: ignore[assignment]
+
+
+class BeatError(RuntimeError):
+    """Raised when beat analysis fails."""
+
+
+@dataclasses.dataclass
+class AudioBeatMap:
+    """Rich beat-analysis result — one pass, many consumers.
+
+    All timestamps are in milliseconds.
+    """
+
+    bpm: float
+    """Detected tempo in beats per minute."""
+
+    beats: list[int]
+    """Timestamp (ms) of every detected beat."""
+
+    downbeats: list[int]
+    """Timestamp (ms) of every downbeat (first beat of each measure).
+
+    V1 assumes 4/4 time — every 4th beat.
+    """
+
+    phrases: list[tuple[int, int]]
+    """(start_ms, end_ms) of each musical phrase.
+
+    V1 groups every 16 beats (4 bars of 4/4).
+    """
+
+    energy: list[float]
+    """Normalised RMS energy (0.0–1.0) at each beat timestamp.
+
+    Useful for ranking which beats have the most drive — peaks tend to fall
+    on kick drums and snare hits.
+    """
+
+    duration_ms: int
+    """Total audio duration in milliseconds."""
+
+    @property
+    def beat_interval_ms(self) -> float:
+        """Average interval between beats in milliseconds."""
+        return 60_000.0 / self.bpm
+
+    def beats_in_range(self, start_ms: int, end_ms: int) -> list[int]:
+        """Return beat timestamps that fall within [start_ms, end_ms)."""
+        return [b for b in self.beats if start_ms <= b < end_ms]
+
+    def nearest_beat(self, ms: int, *, direction: str = "nearest") -> int:
+        """Return the beat timestamp closest to *ms*.
+
+        Args:
+            ms: Target time in milliseconds.
+            direction: ``"nearest"`` (default), ``"before"``, or ``"after"``.
+
+        Raises:
+            ValueError: If *direction* is not a recognised value.
+            BeatError: If the beat map contains no beats.
+        """
+        if not self.beats:
+            raise BeatError("Beat map contains no beats.")
+        if direction not in ("nearest", "before", "after"):
+            raise ValueError(
+                f"direction must be 'nearest', 'before', or 'after'; got {direction!r}"
+            )
+
+        before = [b for b in self.beats if b <= ms]
+        after = [b for b in self.beats if b > ms]
+
+        if direction == "before":
+            return before[-1] if before else self.beats[0]
+        if direction == "after":
+            return after[0] if after else self.beats[-1]
+
+        # nearest
+        candidates = []
+        if before:
+            candidates.append(before[-1])
+        if after:
+            candidates.append(after[0])
+        return min(candidates, key=lambda b: abs(b - ms))
+
+
+def analyze_beats(
+    input: str | Path,
+    *,
+    sr: int = 22050,
+) -> AudioBeatMap:
+    """Analyse the beat structure of an audio or video file.
+
+    Wraps librosa for onset detection, BPM estimation, beat grid, downbeat
+    tracking, and per-beat energy. Accepts audio files (.mp3, .wav, .flac,
+    .m4a, …) and video files with an audio track.
+
+    One call, one pass — the returned :class:`AudioBeatMap` is the single
+    source of truth for all downstream consumers (beat-snap, beat-grid
+    assembly, multi-panel canvas sync).
+
+    Install librosa with: ``pip install "videoflow[audio]"``
+
+    Args:
+        input: Path to the audio or video file.
+        sr: Sample rate to use when loading (default 22050 Hz). Lower values
+            are faster; 22050 is librosa's standard for beat tracking.
+
+    Returns:
+        :class:`AudioBeatMap` with bpm, beats, downbeats, phrases, energy,
+        and duration_ms.
+
+    Raises:
+        FileNotFoundError: If the input file does not exist.
+        BeatError: If librosa is not installed or analysis fails.
+    """
+    input = Path(input)
+    if not input.exists():
+        raise FileNotFoundError(f"Input file not found: {input}")
+
+    if _librosa is None:
+        raise BeatError(
+            "librosa is required for beat analysis. "
+            'Install it with: pip install "videoflow[audio]"'
+        )
+
+    try:
+        y, sr_ = _librosa.load(str(input), sr=sr, mono=True)
+        tempo, beat_frames = _librosa.beat.beat_track(y=y, sr=sr_)
+        beat_times = _librosa.frames_to_time(beat_frames, sr=sr_)
+
+        bpm = float(_np.atleast_1d(tempo)[0])
+        beats_ms = [round(float(t) * 1000) for t in beat_times]
+
+        # Downbeats: every 4th beat (assume 4/4 time, V1)
+        downbeats_ms = beats_ms[::4]
+
+        # Phrases: every 16 beats = 4 bars
+        phrases: list[tuple[int, int]] = []
+        for i in range(0, len(beats_ms), 16):
+            start = beats_ms[i]
+            end = beats_ms[min(i + 16, len(beats_ms) - 1)]
+            phrases.append((start, end))
+
+        # Per-beat energy: RMS normalised to 0.0–1.0
+        rms = _librosa.feature.rms(y=y)[0]  # shape: (n_frames,)
+        energy_raw = [
+            float(rms[min(int(f), len(rms) - 1)]) for f in beat_frames
+        ]
+        max_e = max(energy_raw) if energy_raw else 1.0
+        energy = [e / max_e if max_e > 0 else 0.0 for e in energy_raw]
+
+        duration_ms = round(_librosa.get_duration(y=y, sr=sr_) * 1000)
+
+    except BeatError:
+        raise
+    except Exception as exc:
+        raise BeatError(f"Beat analysis failed: {exc}") from exc
+
+    return AudioBeatMap(
+        bpm=bpm,
+        beats=beats_ms,
+        downbeats=downbeats_ms,
+        phrases=phrases,
+        energy=energy,
+        duration_ms=duration_ms,
+    )

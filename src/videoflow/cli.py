@@ -121,6 +121,58 @@ def cmd_detectors(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# analyze-beats
+# ---------------------------------------------------------------------------
+
+def cmd_analyze_beats(args: argparse.Namespace) -> int:
+    from videoflow.audio import BeatError, analyze_beats
+
+    try:
+        beat_map = analyze_beats(args.input)
+    except FileNotFoundError as exc:
+        _err(str(exc), args.human)
+        return 1
+    except BeatError as exc:
+        _err(str(exc), args.human)
+        return 1
+
+    data = {
+        "input": str(args.input),
+        "bpm": round(beat_map.bpm, 2),
+        "duration_ms": beat_map.duration_ms,
+        "beat_count": len(beat_map.beats),
+        "downbeat_count": len(beat_map.downbeats),
+        "phrase_count": len(beat_map.phrases),
+        "beats": beat_map.beats,
+        "downbeats": beat_map.downbeats,
+        "phrases": [{"start_ms": s, "end_ms": e} for s, e in beat_map.phrases],
+        "energy": [round(e, 4) for e in beat_map.energy],
+    }
+
+    if args.human:
+        print(f"input:        {args.input}")
+        print(f"bpm:          {beat_map.bpm:.1f}")
+        print(f"duration:     {beat_map.duration_ms / 1000:.1f}s")
+        print(f"beats:        {len(beat_map.beats)}")
+        print(f"downbeats:    {len(beat_map.downbeats)}")
+        print(f"phrases:      {len(beat_map.phrases)}")
+        print(f"beat interval: {beat_map.beat_interval_ms:.0f}ms")
+        if args.beats:
+            for i, b in enumerate(beat_map.beats):
+                bar = (i // 4) + 1
+                beat_in_bar = (i % 4) + 1
+                marker = " ← downbeat" if beat_in_bar == 1 else ""
+                print(f"  beat {i + 1:>4}  bar {bar:>3}.{beat_in_bar}  {b / 1000:>7.3f}s{marker}")
+    else:
+        if not args.beats:
+            data.pop("beats")
+            data.pop("energy")
+        print(json.dumps(data, indent=2))
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 
@@ -172,6 +224,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="List available detectors with threshold guidance.",
     )
     p_det.set_defaults(func=cmd_detectors)
+
+    # analyze-beats
+    p_beats = sub.add_parser(
+        "analyze-beats",
+        help="Analyse the beat structure of an audio or video file.",
+    )
+    p_beats.add_argument("input", type=Path, help="Input audio or video file.")
+    p_beats.add_argument(
+        "--beats",
+        action="store_true",
+        help="Include full beat timestamp list in output.",
+    )
+    p_beats.set_defaults(func=cmd_analyze_beats)
 
     return parser
 
