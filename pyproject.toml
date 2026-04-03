@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Composable video workflow pipeline — scene detection, smart clips, GPU upscaling, job monitoring"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "videoedit @ git+https://github.com/xolvco/videoedit.git@main",
+]
 
 [project.optional-dependencies]
 scenes = ["scenedetect[opencv]>=0.6"]
