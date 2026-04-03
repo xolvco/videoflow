@@ -9,7 +9,6 @@ description = "Composable video workflow pipeline — scene detection, smart cli
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "videoedit @ git+https://github.com/xolvco/videoedit.git@main",
 ]
 
 [project.optional-dependencies]
