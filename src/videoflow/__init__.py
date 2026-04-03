@@ -1,4 +1,8 @@
-"""videoflow — composable video workflow pipeline."""
+"""videoflow compatibility layer over the shared videoedit backend."""
+
+from ._videoedit_bootstrap import ensure_videoedit_on_path
+
+ensure_videoedit_on_path()
 
 from videoflow.analysis import DETECTOR_INFO, DetectorInfo, Scene, SceneError, detect_scenes
 from videoflow.audio import AudioBeatMap, BeatError, analyze_beats
